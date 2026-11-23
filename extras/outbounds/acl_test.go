@@ -1,6 +1,7 @@
 package outbounds
 
 import (
+	"errors"
 	"net"
 	"testing"
 
@@ -42,10 +43,15 @@ reJect(nsa.gov)
 	assert.Nil(t, conn)
 
 	// Match ob3
-	ob3.EXPECT().UDP(&AddrEx{Host: "youtube.com"}).Return(nil, nil).Once()
+	ob3.EXPECT().CheckUDP(&AddrEx{Host: "youtube.com"}).Return(nil).Twice()
+	dialErr := errors.New("test UDP dial")
+	ob3.EXPECT().UDP(&AddrEx{Host: "youtube.com"}).Return(nil, dialErr).Once()
 	udpConn, err := engine.UDP(&AddrEx{Host: "youtube.com"})
 	assert.NoError(t, err)
-	assert.Nil(t, udpConn)
+	assert.NotNil(t, udpConn)
+	defer udpConn.Close()
+	_, err = udpConn.WriteTo(nil, &AddrEx{Host: "youtube.com"})
+	assert.ErrorIs(t, err, dialErr)
 
 	// Match ob1 hijack IP
 	ob1.EXPECT().TCP(&AddrEx{Host: "8.8.8.8", ResolveInfo: &ResolveInfo{IPv4: net.ParseIP("8.8.8.8").To4()}}).Return(nil, nil).Once()
@@ -91,9 +97,15 @@ func TestACLEngineAuthRouting(t *testing.T) {
 	_, err = engine.TCP(&AddrEx{Host: "example.com", Port: 443, Info: bobInfo})
 	assert.NoError(t, err)
 
-	alice.EXPECT().UDP(&AddrEx{Host: "example.com", Port: 443, Info: aliceInfo}).Return(nil, nil).Once()
-	_, err = engine.UDP(&AddrEx{Host: "example.com", Port: 443, Info: aliceInfo})
+	alice.EXPECT().CheckUDP(&AddrEx{Host: "example.com", Port: 443, Info: aliceInfo}).Return(nil).Twice()
+	dialErr := errors.New("test UDP dial")
+	alice.EXPECT().UDP(&AddrEx{Host: "example.com", Port: 443, Info: aliceInfo}).Return(nil, dialErr).Once()
+	conn, err := engine.UDP(&AddrEx{Host: "example.com", Port: 443, Info: aliceInfo})
 	assert.NoError(t, err)
+	defer conn.Close()
+	// The session identity is fixed at creation, not taken from each write.
+	_, err = conn.WriteTo(nil, &AddrEx{Host: "example.com", Port: 443, Info: bobInfo})
+	assert.ErrorIs(t, err, dialErr)
 
 	alice.EXPECT().CheckUDP(&AddrEx{Host: "example.com", Port: 53, Info: aliceInfo}).Return(nil).Once()
 	assert.NoError(t, engine.CheckUDP(&AddrEx{Host: "example.com", Port: 53, Info: aliceInfo}))

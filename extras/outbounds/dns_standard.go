@@ -195,7 +195,7 @@ func (r *standardResolver) lookup6WithCNAMEDepth(host string, depth int, seen ma
 	}
 }
 
-func (r *standardResolver) resolve(reqAddr *AddrEx) {
+func (r *standardResolver) Resolve(reqAddr *AddrEx) {
 	if tryParseIP(reqAddr) {
 		// The host is already an IP address, we don't need to resolve it.
 		return
@@ -240,16 +240,16 @@ func (r *standardResolver) resolve(reqAddr *AddrEx) {
 }
 
 func (r *standardResolver) TCP(reqAddr *AddrEx) (net.Conn, error) {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.TCP(reqAddr)
 }
 
 func (r *standardResolver) UDP(reqAddr *AddrEx) (UDPConn, error) {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.UDP(reqAddr)
 }
 
 func (r *standardResolver) CheckUDP(reqAddr *AddrEx) error {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.CheckUDP(reqAddr)
 }

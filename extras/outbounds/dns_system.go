@@ -19,7 +19,7 @@ func NewSystemResolver(next PluggableOutbound) PluggableOutbound {
 	}
 }
 
-func (r *systemResolver) resolve(reqAddr *AddrEx) {
+func (r *systemResolver) Resolve(reqAddr *AddrEx) {
 	ips, err := net.LookupIP(reqAddr.Host)
 	if err != nil {
 		reqAddr.ResolveInfo = &ResolveInfo{Err: err}
@@ -31,16 +31,16 @@ func (r *systemResolver) resolve(reqAddr *AddrEx) {
 }
 
 func (r *systemResolver) TCP(reqAddr *AddrEx) (net.Conn, error) {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.TCP(reqAddr)
 }
 
 func (r *systemResolver) UDP(reqAddr *AddrEx) (UDPConn, error) {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.UDP(reqAddr)
 }
 
 func (r *systemResolver) CheckUDP(reqAddr *AddrEx) error {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.CheckUDP(reqAddr)
 }

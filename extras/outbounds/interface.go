@@ -66,8 +66,14 @@ type ResolveInfo struct {
 
 var _ server.Outbound = (*PluggableOutboundAdapter)(nil)
 
+// Resolver supplies the configured DNS resolution for UDP destinations.
+type Resolver interface {
+	Resolve(reqAddr *AddrEx)
+}
+
 type PluggableOutboundAdapter struct {
 	PluggableOutbound
+	Resolve func(*AddrEx)
 }
 
 func parsePortUint16(port string) (uint16, error) {
@@ -111,7 +117,7 @@ func (a *PluggableOutboundAdapter) UDP(info *server.RequestInfo, reqAddr string)
 	if err != nil {
 		return nil, err
 	}
-	return &udpConnAdapter{UDPConn: conn}, nil
+	return &udpConnAdapter{UDPConn: conn, resolve: a.Resolve}, nil
 }
 
 func (a *PluggableOutboundAdapter) CheckUDP(info *server.RequestInfo, reqAddr string) error {
@@ -132,6 +138,7 @@ func (a *PluggableOutboundAdapter) CheckUDP(info *server.RequestInfo, reqAddr st
 
 type udpConnAdapter struct {
 	UDPConn
+	resolve func(*AddrEx)
 
 	// The last address converted in each direction, as it rarely changes between packets
 	lastRead  atomic.Pointer[udpConnAdapterAddr]
@@ -139,9 +146,10 @@ type udpConnAdapter struct {
 }
 
 type udpConnAdapterAddr struct {
-	String string
-	Host   string
-	Port   uint16
+	ResolveInfo *ResolveInfo
+	String      string
+	Host        string
+	Port        uint16
 }
 
 func (u *udpConnAdapter) ReadFrom(b []byte) (int, string, error) {
@@ -168,12 +176,18 @@ func (u *udpConnAdapter) WriteTo(b []byte, addr string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		last = &udpConnAdapterAddr{String: addr, Host: host, Port: portUint}
+		target := &AddrEx{Host: host, Port: portUint}
+		if u.resolve != nil {
+			u.resolve(target)
+		}
+		last = &udpConnAdapterAddr{String: addr, Host: host, Port: portUint, ResolveInfo: target.ResolveInfo}
 		u.lastWrite.Store(last)
 	}
+	// Pass a fresh address so ACL hijacking cannot modify lastWrite.
 	return u.UDPConn.WriteTo(b, &AddrEx{
-		Host: last.Host,
-		Port: last.Port,
+		Host:        last.Host,
+		Port:        last.Port,
+		ResolveInfo: last.ResolveInfo,
 	})
 }
 

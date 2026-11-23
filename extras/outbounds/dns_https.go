@@ -40,7 +40,7 @@ func NewDoHResolver(addr string, timeout time.Duration, sni string, insecure boo
 	}
 }
 
-func (r *dohResolver) resolve(reqAddr *AddrEx) {
+func (r *dohResolver) Resolve(reqAddr *AddrEx) {
 	if tryParseIP(reqAddr) {
 		// The host is already an IP address, we don't need to resolve it.
 		return
@@ -79,16 +79,16 @@ func (r *dohResolver) resolve(reqAddr *AddrEx) {
 }
 
 func (r *dohResolver) TCP(reqAddr *AddrEx) (net.Conn, error) {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.TCP(reqAddr)
 }
 
 func (r *dohResolver) UDP(reqAddr *AddrEx) (UDPConn, error) {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.UDP(reqAddr)
 }
 
 func (r *dohResolver) CheckUDP(reqAddr *AddrEx) error {
-	r.resolve(reqAddr)
+	r.Resolve(reqAddr)
 	return r.Next.CheckUDP(reqAddr)
 }
