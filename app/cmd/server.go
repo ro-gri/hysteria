@@ -67,7 +67,10 @@ var serverCmd = &cobra.Command{
 	Run:   runServerCmd,
 }
 
+var serverClientConfigFile string
+
 func init() {
+	serverCmd.Flags().StringVar(&serverClientConfigFile, "client-config", "", "client config file for the embedded client")
 	rootCmd.AddCommand(serverCmd)
 }
 
@@ -1708,22 +1711,50 @@ func (c *serverConfig) Config() (*server.Config, error) {
 
 func runServerCmd(cmd *cobra.Command, args []string) {
 	logger.Info("server mode")
-	runServer(defaultViper)
+	if err := runServer(defaultViper); err != nil {
+		logger.Fatal("server stopped", zap.Error(err))
+	}
 }
 
-func runServer(v *viper.Viper) {
+func runServer(v *viper.Viper) error {
 	if err := v.ReadInConfig(); err != nil {
-		logger.Fatal("failed to read server config", zap.Error(err))
+		return fmt.Errorf("failed to read server config: %w", err)
 	}
 	var config serverConfig
 	if err := v.Unmarshal(&config); err != nil {
-		logger.Fatal("failed to parse server config", zap.Error(err))
+		return fmt.Errorf("failed to parse server config: %w", err)
+	}
+	var clientResults <-chan clientModeRunnerResult
+	if serverClientConfigFile != "" {
+		// Keep client settings separate from the server configuration.
+		clientViper := viper.New()
+		clientViper.SetConfigFile(serverClientConfigFile)
+		outgoingConfig, err := readClientConfig(clientViper)
+		if err != nil {
+			return fmt.Errorf("failed to read client config: %w", err)
+		}
+		var cleanup func() error
+		_, clientResults, cleanup, err = innerRunClient(outgoingConfig, true, true)
+		if err != nil {
+			return fmt.Errorf("failed to initialize client: %w", err)
+		}
+		defer cleanup()
 	}
 	hyConfig, err := config.Config()
 	if err != nil {
-		logger.Fatal("failed to load server config", zap.Error(err))
+		return fmt.Errorf("failed to load server config: %w", err)
 	}
 
+	serverOwnsConfig := false
+	defer func() {
+		if !serverOwnsConfig {
+			_ = hyConfig.Conn.Close()
+			if hyConfig.Cleanup != nil {
+				_ = hyConfig.Cleanup.Close()
+			}
+		}
+	}()
+	mimicErrors := make(chan error, 1)
 	mimicInst, err := mimic.Start(
 		mimic.Config{
 			Enabled:   config.Mimic.Enabled,
@@ -1733,17 +1764,25 @@ func runServer(v *viper.Viper) {
 			ExtraArgs: config.Mimic.ExtraArgs,
 		},
 		mimic.RoleServer, []*net.UDPAddr{listenUDPAddr(config.Listen)}, logger,
-		func(err error) { logger.Fatal("mimic stopped", zap.Error(err)) },
+		func(err error) {
+			select {
+			case mimicErrors <- err:
+			default:
+			}
+		},
 	)
 	if err != nil {
-		logger.Fatal("failed to start mimic", zap.Error(err))
+		return fmt.Errorf("failed to start mimic: %w", err)
 	}
 	defer mimicInst.Close()
 
 	s, err := server.NewServer(hyConfig)
 	if err != nil {
-		logger.Fatal("failed to initialize server", zap.Error(err))
+		return fmt.Errorf("failed to initialize server: %w", err)
 	}
+	serverOwnsConfig = true
+	closeServer := sync.OnceValue(s.Close)
+	defer closeServer()
 	if config.Listen != "" {
 		logger.Info("server up and running", zap.String("listen", config.Listen))
 	} else {
@@ -1766,17 +1805,24 @@ func runServer(v *viper.Viper) {
 	select {
 	case <-signalChan:
 		logger.Info("received signal, shutting down gracefully")
-		if err := s.Close(); err != nil {
+		if err := closeServer(); err != nil {
 			logger.Error("failed to shut down server cleanly", zap.Error(err))
 		}
 		if err := <-serveErrChan; err != nil {
 			logger.Info("server stopped", zap.Error(err))
 		}
+	case err := <-mimicErrors:
+		return fmt.Errorf("mimic stopped: %w", err)
+	case result := <-clientResults:
+		if !result.OK {
+			return fmt.Errorf("%s: %w", result.Msg, result.Err)
+		}
 	case err := <-serveErrChan:
 		if err != nil {
-			logger.Fatal("failed to serve", zap.Error(err))
+			return fmt.Errorf("failed to serve: %w", err)
 		}
 	}
+	return nil
 }
 
 func runTrafficStatsServer(listen string, handler http.Handler) {

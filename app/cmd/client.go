@@ -832,41 +832,21 @@ func (c *clientConfig) realmHTTPClient() *stdHTTP.Client {
 
 func runClientCmd(cmd *cobra.Command, args []string) {
 	logger.Info("client mode")
-	runClient(defaultViper)
+	if err := runClient(defaultViper); err != nil {
+		logger.Fatal("client stopped", zap.Error(err))
+	}
 }
 
-func runClient(v *viper.Viper) {
-	if err := v.ReadInConfig(); err != nil {
-		logger.Fatal("failed to read client config", zap.Error(err))
-	}
-	var config clientConfig
-	if err := v.Unmarshal(&config); err != nil {
-		logger.Fatal("failed to parse client config", zap.Error(err))
-	}
-
-	if err := config.validateMimic(); err != nil {
-		logger.Fatal("failed to load client config", zap.Error(err))
-	}
-	mimicInst := config.startMimic()
-	defer mimicInst.Close()
-
-	c, err := client.NewReconnectableClient(
-		config.Config,
-		func(c client.Client, info *client.HandshakeInfo, count int) {
-			connectLog(info, count)
-			// On the client side, we start checking for updates after we successfully connect
-			// to the server, which, depending on whether lazy mode is enabled, may or may not
-			// be immediately after the client starts. We don't want the update check request
-			// to interfere with the lazy mode option.
-			if count == 1 && !disableUpdateCheck {
-				go runCheckUpdateClient(c)
-			}
-		}, config.Lazy,
-	)
+func runClient(v *viper.Viper) error {
+	config, err := readClientConfig(v)
 	if err != nil {
-		logger.Fatal("failed to initialize client", zap.Error(err))
+		return fmt.Errorf("failed to load client config: %w", err)
 	}
-	defer c.Close()
+	_, results, cleanup, err := innerRunClient(config, false, disableUpdateCheck)
+	if err != nil {
+		return fmt.Errorf("failed to initialize client: %w", err)
+	}
+	defer cleanup()
 
 	uri := config.URI()
 	if showQR {
@@ -875,8 +855,71 @@ func runClient(v *viper.Viper) {
 		logger.Info("use this URI to share your server", zap.String("uri", uri))
 		utils.PrintQR(uri)
 	}
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signalChan)
+	select {
+	case <-signalChan:
+		logger.Info("received signal, shutting down gracefully")
+	case result := <-results:
+		if !result.OK {
+			if result.Err != nil {
+				return fmt.Errorf("%s: %w", result.Msg, result.Err)
+			}
+			return errors.New(result.Msg)
+		}
+		logger.Info(result.Msg)
+	}
+	return nil
+}
 
-	// Register modes
+func readClientConfig(v *viper.Viper) (*clientConfig, error) {
+	if err := v.ReadInConfig(); err != nil {
+		return nil, err
+	}
+	var config clientConfig
+	if err := v.Unmarshal(&config); err != nil {
+		return nil, err
+	}
+	if err := config.validateMimic(); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// innerRunClient starts the client and its configured local modes. The caller
+// owns shutdown and must call cleanup when its command stops.
+func innerRunClient(config *clientConfig, allowNoModes bool, disableUpdateCheck bool) (client.Client, <-chan clientModeRunnerResult, func() error, error) {
+	var closers []func() error
+	cleanup := sync.OnceValue(func() error {
+		var err error
+		for i := len(closers) - 1; i >= 0; i-- {
+			err = errors.Join(err, closers[i]())
+		}
+		return err
+	})
+	results := make(chan clientModeRunnerResult, 2)
+	m, err := config.startMimicWithError(func(err error) {
+		select {
+		case results <- clientModeRunnerResult{Msg: "client mimic stopped", Err: err}:
+		default:
+		}
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	closers = append(closers, m.Close)
+	c, err := client.NewReconnectableClient(config.Config, func(c client.Client, info *client.HandshakeInfo, count int) {
+		connectLog(info, count)
+		if count == 1 && !disableUpdateCheck {
+			go runCheckUpdateClient(c)
+		}
+	}, config.Lazy)
+	if err != nil {
+		_ = cleanup()
+		return nil, nil, nil, err
+	}
+	closers = append(closers, c.Close)
 	var runner clientModeRunner
 	if config.SOCKS5 != nil {
 		runner.Add("SOCKS5 server", func() error {
@@ -915,47 +958,29 @@ func runClient(v *viper.Viper) {
 	}
 	var tunServer *tun.Server
 	if config.TUN != nil {
+		var err error
 		tunServer, err = newTUNServer(*config.TUN, c)
 		if err != nil {
-			_ = c.Close()
-			logger.Fatal("failed to load client config", zap.Error(err))
+			_ = cleanup()
+			return nil, nil, nil, err
 		}
+		closers = append(closers, tunServer.Close)
 		// The TUN adds routes and rules to the system, remove them on exit
-		defer tunServer.Close()
 		runner.Add("TUN", func() error {
 			logger.Info("TUN listening", zap.String("interface", config.TUN.Name))
 			return tunServer.Serve()
 		})
 	}
 
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signalChan)
-
-	runnerChan := make(chan clientModeRunnerResult, 1)
-	go func() {
-		runnerChan <- runner.Run()
-	}()
-
-	select {
-	case <-signalChan:
-		logger.Info("received signal, shutting down gracefully")
-	case r := <-runnerChan:
-		if r.OK {
-			logger.Info(r.Msg)
-		} else {
-			// Close these here as Fatal will exit the program without running defer
-			if tunServer != nil {
-				_ = tunServer.Close()
-			}
-			_ = c.Close()
-			if r.Err != nil {
-				logger.Fatal(r.Msg, zap.Error(r.Err))
-			} else {
-				logger.Fatal(r.Msg)
-			}
-		}
+	if len(runner.ModeMap) == 0 && !allowNoModes {
+		_ = cleanup()
+		return nil, nil, nil, errors.New("no mode specified")
 	}
+	// An outbound-only client has no local modes to run.
+	if len(runner.ModeMap) > 0 {
+		go func() { results <- runner.Run() }()
+	}
+	return c, results, cleanup, nil
 }
 
 type clientModeRunner struct {
@@ -1502,17 +1527,25 @@ func (l *tunLogger) UDPError(addr string, err error) {
 // opens a connection needs this, not just "client": Mimic has to be attached
 // before the first packet, or the server sees plain UDP and drops it.
 func (c *clientConfig) startMimic() *mimic.Instance {
+	inst, err := c.startMimicWithError(func(err error) { logger.Fatal("mimic stopped", zap.Error(err)) })
+	if err != nil {
+		logger.Fatal("failed to start mimic", zap.Error(err))
+	}
+	return inst
+}
+
+func (c *clientConfig) startMimicWithError(onError func(error)) (*mimic.Instance, error) {
 	if err := c.validateMimic(); err != nil {
-		logger.Fatal("failed to load client config", zap.Error(err))
+		return nil, err
 	}
 	if !c.Mimic.Enabled {
-		return nil
+		return nil, nil
 	}
 	addrs, err := c.mimicServerAddrs()
 	if err != nil {
-		logger.Fatal("failed to resolve server address for mimic", zap.Error(err))
+		return nil, err
 	}
-	inst, err := mimic.Start(
+	return mimic.Start(
 		mimic.Config{
 			Enabled:   c.Mimic.Enabled,
 			Interface: c.Mimic.Interface,
@@ -1521,12 +1554,8 @@ func (c *clientConfig) startMimic() *mimic.Instance {
 			ExtraArgs: c.Mimic.ExtraArgs,
 		},
 		mimic.RoleClient, addrs, logger,
-		func(err error) { logger.Fatal("mimic stopped", zap.Error(err)) },
+		onError,
 	)
-	if err != nil {
-		logger.Fatal("failed to start mimic", zap.Error(err))
-	}
-	return inst
 }
 
 // mimicServerAddrs resolves the server address for Mimic's filters. Mimic needs
