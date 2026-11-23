@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
+	"github.com/apernet/hysteria/extras/v2/outbounds/acl"
 	"github.com/stretchr/testify/require"
 )
 
@@ -114,4 +115,48 @@ func TestHysteria2UDP(t *testing.T) {
 	c.udp = func() (client.HyUDPConn, error) { return nil, failure }
 	_, err = ob.UDP(&AddrEx{})
 	require.ErrorIs(t, err, failure)
+}
+
+// Routing stays in the existing ACL engine, not in the new transport.
+func TestHysteria2ACL(t *testing.T) {
+	exitErr := errors.New("upstream unavailable")
+	var destination string
+	c := &relayTestClient{
+		tcp: func(addr string) (net.Conn, error) { destination = addr; return nil, exitErr },
+		udp: func() (client.HyUDPConn, error) { return nil, exitErr },
+	}
+	direct := &mockPluggableOutbound{}
+	socks := &mockPluggableOutbound{}
+	rules, err := acl.TranslateText("direct(192.0.2.0/24)\nsocks(suffix:other.example)\nreject(198.51.100.0/24)\nexit(all)", "")
+	require.NoError(t, err)
+	engine, err := NewACLEngine(rules, []OutboundEntry{
+		{Name: "exit", Outbound: NewHysteria2Outbound(c)},
+		{Name: "direct", Outbound: direct},
+		{Name: "socks", Outbound: socks},
+	}, nil)
+	require.NoError(t, err)
+	directAddr := &AddrEx{Host: "192.0.2.3", Port: 443, ResolveInfo: &ResolveInfo{IPv4: net.IPv4(192, 0, 2, 3)}}
+	direct.EXPECT().TCP(directAddr).Return(nil, nil).Once()
+	_, err = engine.TCP(directAddr)
+	require.NoError(t, err)
+	socksAddr := &AddrEx{Host: "www.other.example", Port: 443}
+	socks.EXPECT().TCP(socksAddr).Return(nil, nil).Once()
+	_, err = engine.TCP(socksAddr)
+	require.NoError(t, err)
+	_, err = engine.TCP(&AddrEx{Host: "198.51.100.4", Port: 443, ResolveInfo: &ResolveInfo{IPv4: net.IPv4(198, 51, 100, 4)}})
+	require.ErrorIs(t, err, errRejected)
+	// Failure in the selected exit is returned, never retried through DIRECT.
+	_, err = engine.TCP(&AddrEx{Host: "remote.example", Port: 443})
+	require.ErrorIs(t, err, exitErr)
+	require.Equal(t, "remote.example:443", destination)
+	_, err = engine.UDP(&AddrEx{Host: "203.0.113.1", Port: 53})
+	require.ErrorIs(t, err, exitErr)
+	require.ErrorIs(t, engine.CheckUDP(&AddrEx{Host: "198.51.100.4", Port: 53, ResolveInfo: &ResolveInfo{IPv4: net.IPv4(198, 51, 100, 4)}}), errRejected)
+	// Locally resolved IP controls ACL while Host remains available to the exit.
+	resolved := &AddrEx{Host: "local.example", Port: 53, ResolveInfo: &ResolveInfo{IPv4: net.IPv4(192, 0, 2, 3)}}
+	direct.EXPECT().UDP(resolved).Return(nil, nil).Once()
+	_, err = engine.UDP(resolved)
+	require.NoError(t, err)
+	direct.AssertExpectations(t)
+	socks.AssertExpectations(t)
 }
