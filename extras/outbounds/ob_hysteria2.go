@@ -16,7 +16,8 @@ func NewHysteria2Outbound(c client.Client) PluggableOutbound {
 }
 
 func (o *hysteria2Outbound) TCP(addr *AddrEx) (net.Conn, error) {
-	return nil, errors.New("TCP is not supported by this outbound")
+	// Preserve the requested host, as SOCKS5 does: the exit resolves domains.
+	return o.client.TCP(addr.String())
 }
 func (o *hysteria2Outbound) UDP(addr *AddrEx) (UDPConn, error) {
 	return nil, errors.New("UDP is not supported by this outbound")
