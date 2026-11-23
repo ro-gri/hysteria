@@ -41,6 +41,17 @@ func TestOutboundOnlyClientRemainsRunning(t *testing.T) {
 	}
 }
 
+func TestHysteria2OutboundRequiresClient(t *testing.T) {
+	config := serverConfig{Outbounds: []serverConfigOutboundEntry{{Name: "exit", Type: "hysteria2"}}}
+	_, err := config.outboundEntries(nil)
+	require.ErrorContains(t, err, "requires --client-config")
+	// Existing outbound-only server configurations need no client file.
+	config.Outbounds[0].Type = "direct"
+	entries, err := config.outboundEntries(nil)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+}
+
 func TestEmbeddedClientLocalModeFailureStops(t *testing.T) {
 	occupied, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

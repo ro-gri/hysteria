@@ -380,7 +380,7 @@ func runACLTest(v *viper.Viper, target string, opts aclTestOptions, out io.Write
 	if aclField == "" {
 		return errors.New("no ACL configured (acl.file, acl.inline, acl.rules or acl.rulesFile)")
 	}
-	obs, err := config.outboundEntries()
+	obs, err := config.outboundEntries(nil)
 	if err != nil {
 		return err
 	}
