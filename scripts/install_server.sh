@@ -30,10 +30,10 @@ SYSTEMD_SERVICES_DIR="/etc/systemd/system"
 CONFIG_DIR="/etc/hysteria"
 
 # URLs of GitHub
-REPO_URL="https://github.com/apernet/hysteria"
+REPO_URL="https://github.com/ro-gri/laz-hysteria"
 
-# URL of Hysteria 2 API
-HY2_API_BASE_URL="https://api.hy2.io/v1"
+# URL of GitHub Releases API
+RELEASE_API_URL="https://api.github.com/repos/ro-gri/laz-hysteria/releases/latest"
 
 # curl command line flags.
 # To using a proxy, please specify ALL_PROXY in the environ variable, such like:
@@ -359,9 +359,9 @@ rerun_with_sudo() {
     chmod +x "$_tmp_script"
 
     if has_command curl; then
-      curl -o "$_tmp_script" 'https://get.hy2.sh/'
+      curl -o "$_tmp_script" 'https://raw.githubusercontent.com/ro-gri/laz-hysteria/master/scripts/install_server.sh'
     elif has_command wget; then
-      wget -O "$_tmp_script" 'https://get.hy2.sh'
+      wget -O "$_tmp_script" 'https://raw.githubusercontent.com/ro-gri/laz-hysteria/master/scripts/install_server.sh'
     else
       return 127
     fi
@@ -579,6 +579,8 @@ vercmp_segment() {
 vercmp() {
   local _lhs=${1#v}
   local _rhs=${2#v}
+  _lhs="${_lhs%%+*}"
+  _rhs="${_rhs%%+*}"
 
   while [[ -n "$_lhs" && -n "$_rhs" ]]; do
     local _clhs="${_lhs/.*/}"
@@ -876,7 +878,7 @@ is_hysteria1_version() {
 get_installed_version() {
   if is_hysteria_installed; then
     if "$EXECUTABLE_INSTALL_PATH" version > /dev/null 2>&1; then
-      "$EXECUTABLE_INSTALL_PATH" version | grep '^Version' | grep -o 'v[.0-9]*'
+      "$EXECUTABLE_INSTALL_PATH" version | sed -nE 's/^Version:[[:space:]]*(v[^[:space:]]+).*/\1/p'
     elif "$EXECUTABLE_INSTALL_PATH" -v > /dev/null 2>&1; then
       # hysteria 1
       "$EXECUTABLE_INSTALL_PATH" -v | cut -d ' ' -f 3
@@ -891,20 +893,21 @@ get_latest_version() {
   fi
 
   local _tmpfile=$(mktemp)
-  if ! curl -sS "$HY2_API_BASE_URL/update?cver=installscript&plat=${OPERATING_SYSTEM}&arch=${ARCHITECTURE}&chan=release&side=server" -o "$_tmpfile"; then
-    error "Failed to get the latest version from Hysteria 2 API, please check your network and try again."
+  if ! curl -fsSL "$RELEASE_API_URL" -o "$_tmpfile"; then
+    error "Failed to get the latest version from GitHub Releases, please check your network and try again."
+    rm -f "$_tmpfile"
     exit 11
   fi
 
-  local _latest_version=$(grep -oP '"lver":\s*\K"v.*?"' "$_tmpfile" | head -1)
-  _latest_version=${_latest_version#'"'}
-  _latest_version=${_latest_version%'"'}
-
-  if [[ -n "$_latest_version" ]]; then
-    echo "$_latest_version"
-  fi
-
+  local _latest_version=$(sed -nE 's/.*"tag_name":[[:space:]]*"app\/(v[0-9]+\.[0-9]+\.[0-9]+(\+hy\.[0-9]+\.[0-9]+\.[0-9]+)?)".*/\1/p' "$_tmpfile" | head -1)
   rm -f "$_tmpfile"
+
+  if [[ -z "$_latest_version" ]]; then
+    error "GitHub release does not contain a supported app/vX.Y.Z[+hy.A.B.C] version."
+    exit 11
+  fi
+  echo "$_latest_version"
+
 }
 
 download_hysteria() {
@@ -1098,7 +1101,7 @@ perform_install() {
     echo
     echo -e "$(tbold)Hysteria has been successfully update to $VERSION.$(treset)"
     echo
-    echo -e "Check out the latest changelog $(tblue)https://github.com/apernet/hysteria/blob/master/CHANGELOG.md$(treset)"
+    echo -e "Check out the latest changelog $(tblue)https://github.com/ro-gri/laz-hysteria/blob/master/CHANGELOG.md$(treset)"
     echo
   fi
 }

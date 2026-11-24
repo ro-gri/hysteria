@@ -889,7 +889,7 @@ func readClientConfig(v *viper.Viper) (*clientConfig, error) {
 
 // innerRunClient starts the client and its configured local modes. The caller
 // owns shutdown and must call cleanup when its command stops.
-func innerRunClient(config *clientConfig, allowNoModes bool, disableUpdateCheck bool) (client.Client, <-chan clientModeRunnerResult, func() error, error) {
+func innerRunClient(config *clientConfig, allowNoModes, disableUpdateCheck bool) (client.Client, <-chan clientModeRunnerResult, func() error, error) {
 	var closers []func() error
 	cleanup := sync.OnceValue(func() error {
 		var err error

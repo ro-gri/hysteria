@@ -35,8 +35,10 @@ type UDPConnGroup struct {
 }
 
 func newUDPConnGroup(engine *aclEngine, info *server.RequestInfo) *UDPConnGroup {
-	return &UDPConnGroup{engine: engine, info: info, connections: make(map[udpGroupKey]UDPConn),
-		replies: make(chan udpGroupReply, engine.maxUDPConnections), closed: make(chan struct{})}
+	return &UDPConnGroup{
+		engine: engine, info: info, connections: make(map[udpGroupKey]UDPConn),
+		replies: make(chan udpGroupReply, engine.maxUDPConnections), closed: make(chan struct{}),
+	}
 }
 
 func (g *UDPConnGroup) WriteTo(b []byte, addr *AddrEx) (int, error) {

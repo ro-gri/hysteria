@@ -33,6 +33,7 @@ type groupTestConn struct {
 func newGroupTestConn() *groupTestConn {
 	return &groupTestConn{reads: make(chan groupPacket, 32), writes: make(chan groupPacket, 32), done: make(chan struct{})}
 }
+
 func (c *groupTestConn) ReadFrom(b []byte) (int, *AddrEx, error) {
 	select {
 	case p := <-c.reads:
@@ -41,6 +42,7 @@ func (c *groupTestConn) ReadFrom(b []byte) (int, *AddrEx, error) {
 		return 0, nil, net.ErrClosed
 	}
 }
+
 func (c *groupTestConn) WriteTo(b []byte, a *AddrEx) (int, error) {
 	if c.writeStarted != nil {
 		c.writeStarted <- struct{}{}
@@ -53,6 +55,7 @@ func (c *groupTestConn) WriteTo(b []byte, a *AddrEx) (int, error) {
 		return 0, net.ErrClosed
 	}
 }
+
 func (c *groupTestConn) Close() error {
 	c.once.Do(func() { c.closes.Add(1); close(c.done) })
 	return nil
@@ -81,6 +84,7 @@ func groupFixture(t *testing.T) (*UDPConnGroup, *groupTestOutbound, *groupTestOu
 	t.Cleanup(func() { g.Close() })
 	return g, a, b
 }
+
 func groupRead(t *testing.T, g *UDPConnGroup) groupPacket {
 	t.Helper()
 	ch := make(chan groupPacket, 1)
@@ -97,6 +101,7 @@ func groupRead(t *testing.T, g *UDPConnGroup) groupPacket {
 		return groupPacket{}
 	}
 }
+
 func TestUDPConnGroupRoutesAndMerges(t *testing.T) {
 	g, a, b := groupFixture(t)
 	require.Equal(t, 3, cap(g.replies)) // Two configured exits and the built-in DIRECT.
@@ -127,6 +132,7 @@ func TestUDPConnGroupRoutesAndMerges(t *testing.T) {
 		require.Equal(t, data, string(p.data))
 	}
 }
+
 func TestUDPConnGroupReadErrorIsQueuedUntilOwnerCloses(t *testing.T) {
 	g, a, b := groupFixture(t)
 	for _, host := range []string{"first.example", "second.example"} {
@@ -155,6 +161,7 @@ func TestUDPConnGroupReadErrorIsQueuedUntilOwnerCloses(t *testing.T) {
 	require.Same(t, b.conn, conn)
 	require.Equal(t, 1, b.dials)
 }
+
 func TestUDPConnGroupCloseUnblocksReaders(t *testing.T) {
 	g, a, b := groupFixture(t)
 	for _, host := range []string{"first.example", "second.example"} {
@@ -172,6 +179,7 @@ func TestUDPConnGroupCloseUnblocksReaders(t *testing.T) {
 	require.EqualValues(t, 1, a.conn.closes.Load())
 	require.EqualValues(t, 1, b.conn.closes.Load())
 }
+
 func TestUDPConnGroupShortBuffer(t *testing.T) {
 	g, a, _ := groupFixture(t)
 	_, err := g.WriteTo(nil, &AddrEx{Host: "first.example"})
@@ -185,6 +193,7 @@ func TestUDPConnGroupShortBuffer(t *testing.T) {
 	a.conn.reads <- groupPacket{data: []byte("next"), addr: &AddrEx{Host: "first.example"}}
 	require.Equal(t, "next", string(groupRead(t, g).data))
 }
+
 func TestUDPConnGroupResolverAndAuth(t *testing.T) {
 	a := &groupTestOutbound{conn: newGroupTestConn()}
 	b := &groupTestOutbound{conn: newGroupTestConn()}

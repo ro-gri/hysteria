@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   tag:
+    # Fork app versions do not publish upstream Go module versions.
+    if: ${{ !contains(github.ref_name, '+hy.') }}
     name: "Create tags"
     runs-on: ubuntu-latest
     steps:

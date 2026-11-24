@@ -1,6 +1,6 @@
 # Embedded Hysteria2 outbound
 
-This fork adds an outbound to the existing server. Run one process with two
+[Laz Hysteria](https://github.com/ro-gri/laz-hysteria) adds an outbound to the existing server. Run one process with two
 ordinary configuration files:
 
 ```sh
@@ -49,6 +49,9 @@ retain their existing behavior. The new outbound requires `--client-config`.
 Standalone clients check for updates after the first successful upstream
 connection. Combined mode uses only the server update checker; the embedded
 client check is disabled. `--disable-update-check` disables the server check.
+
+Existing Hysteria2 client applications do not need changes to use this server.
+Update checks use the stable GitHub Releases of `ro-gri/laz-hysteria`.
 
 ## UDP routing within a session
 

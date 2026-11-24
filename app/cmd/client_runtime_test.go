@@ -17,7 +17,7 @@ func TestLoadEmbeddedClientConfig(t *testing.T) {
 	_, err := readClientConfig(v)
 	require.Error(t, err)
 	p := filepath.Join(t.TempDir(), "client.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("server: localhost:443\nauth: client-password\nlazy: true\nsocks5:\n  listen: 127.0.0.1:1080\n"), 0600))
+	require.NoError(t, os.WriteFile(p, []byte("server: localhost:443\nauth: client-password\nlazy: true\nsocks5:\n  listen: 127.0.0.1:1080\n"), 0o600))
 	v.SetConfigFile(p)
 	c, err := readClientConfig(v)
 	require.NoError(t, err)
@@ -25,7 +25,7 @@ func TestLoadEmbeddedClientConfig(t *testing.T) {
 	require.Equal(t, "client-password", c.Auth)
 	require.True(t, c.Lazy)
 	require.NotNil(t, c.SOCKS5)
-	require.NoError(t, os.WriteFile(p, []byte("auth: ["), 0600))
+	require.NoError(t, os.WriteFile(p, []byte("auth: ["), 0o600))
 	_, err = readClientConfig(v)
 	require.Error(t, err)
 }
@@ -71,7 +71,7 @@ func TestEmbeddedClientLocalModeFailureStops(t *testing.T) {
 
 func TestStandaloneClientStillRequiresMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "client.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("server: 127.0.0.1:1\nlazy: true\n"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("server: 127.0.0.1:1\nlazy: true\n"), 0o600))
 	v := viper.New()
 	v.SetConfigFile(path)
 	require.ErrorContains(t, runClient(v), "no mode specified")
@@ -82,7 +82,7 @@ func TestStandaloneClientReportsLocalModeFailure(t *testing.T) {
 	require.NoError(t, err)
 	defer occupied.Close()
 	path := filepath.Join(t.TempDir(), "client.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("server: 127.0.0.1:1\nlazy: true\nsocks5:\n  listen: "+occupied.Addr().String()+"\n"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("server: 127.0.0.1:1\nlazy: true\nsocks5:\n  listen: "+occupied.Addr().String()+"\n"), 0o600))
 	v := viper.New()
 	v.SetConfigFile(path)
 	require.ErrorContains(t, runClient(v), "failed to run SOCKS5 server")

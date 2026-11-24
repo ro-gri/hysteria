@@ -1,19 +1,52 @@
-# ![Hysteria 2](logo.svg)
+# Laz Hysteria
 
-[![License][1]][2] [![Release][3]][4] [![Telegram][5]][6] [![Discussions][7]][8]
+[![License][1]][2] [![Release][3]][4] [![Build][5]][6] [![Issues][7]][8]
 
 [1]: https://img.shields.io/badge/license-MIT-blue
 [2]: LICENSE.md
-[3]: https://img.shields.io/github/v/release/apernet/hysteria?style=flat-square
-[4]: https://github.com/apernet/hysteria/releases
-[5]: https://img.shields.io/badge/chat-Telegram-blue?style=flat-square
-[6]: https://t.me/hysteria_github
-[7]: https://img.shields.io/github/discussions/apernet/hysteria?style=flat-square
-[8]: https://github.com/apernet/hysteria/discussions
+[3]: https://img.shields.io/github/v/release/ro-gri/laz-hysteria?style=flat-square
+[4]: https://github.com/ro-gri/laz-hysteria/releases
+[5]: https://github.com/ro-gri/laz-hysteria/actions/workflows/master.yml/badge.svg
+[6]: https://github.com/ro-gri/laz-hysteria/actions/workflows/master.yml
+[7]: https://img.shields.io/github/issues/ro-gri/laz-hysteria?style=flat-square
+[8]: https://github.com/ro-gri/laz-hysteria/issues
+
+Laz Hysteria is a fork of [Hysteria 2](https://github.com/apernet/hysteria)
+with support for cascading proxies. The server can route traffic directly or
+through another Hysteria2 server according to routing rules, without running
+a separate Hysteria2 client.
+
+It also fixes UDP routing: rules are applied to each destination within a
+session, rather than only to the first destination.
+
+See the [configuration guide](docs/hysteria2-outbound.md) for details.
+
+The executable remains `hysteria`. Existing command names, configuration paths,
+systemd service names and APIs are retained; the new outbound is opt-in.
+Existing Hysteria2 clients can connect without changes.
+
+Prebuilt releases target **Linux only**, retaining the upstream Linux architecture
+variants and artifact names. Downloads and update checks use this repository's
+GitHub Releases. To install using this fork's server installer:
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/ro-gri/laz-hysteria/master/scripts/install_server.sh)
+```
+
+For fork-specific bugs and requests, use [our Issues][8]. General configuration
+and protocol documentation remain available on the upstream documentation site.
+The original MIT license and copyright notices are preserved.
+
+## Versioning
+
+The first fork release is `v2.0.0+hy.2.14.0`: `2.0.0` is the Laz Hysteria
+version and `hy.2.14.0` records its upstream base. Release tags use
+`app/v2.0.0+hy.2.14.0`. Every new release increments the fork version, including
+when the upstream base changes. Build metadata does not affect update ordering.
 
 <h2 style="text-align: center;">Hysteria is a powerful, lightning-fast, and censorship-resistant proxy.</h2>
 
-### [Get Started](https://v2.hysteria.network/)
+### [Upstream documentation](https://v2.hysteria.network/)
 
 ### [中文文档](https://v2.hysteria.network/zh/)
 
@@ -38,8 +71,8 @@
   </div>
   
   <div>
-    <h3>💻 Cross-platform</h3>
-    <p>We have builds for every major platform and architecture. Deploy anywhere & use everywhere. Not to mention the long list of 3rd party apps.</p>
+    <h3>💻 Linux releases</h3>
+    <p>This fork publishes Linux binaries. Cross-platform source support is retained.</p>
   </div>
 
   <div>
@@ -54,13 +87,3 @@
 </div>
 
 ---
-
-**If you find Hysteria useful, consider giving it a ⭐️!**
-
-<a href="https://www.star-history.com/?repos=apernet%2Fhysteria&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=apernet/hysteria&type=date&theme=dark&legend=top-left&sealed_token=K7X7A4ntaPiRwqCXrW5ZLxZa8rNoQzDOr49Gv4mvXHJDHSerFPUWDcmyyBK_qe3bkV7UAoR_QSn-tFuLB48e3Bvb-eZrUFNk7M8uanHqCOXK2sR0WyHVkw" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=apernet/hysteria&type=date&legend=top-left&sealed_token=K7X7A4ntaPiRwqCXrW5ZLxZa8rNoQzDOr49Gv4mvXHJDHSerFPUWDcmyyBK_qe3bkV7UAoR_QSn-tFuLB48e3Bvb-eZrUFNk7M8uanHqCOXK2sR0WyHVkw" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=apernet/hysteria&type=date&legend=top-left&sealed_token=K7X7A4ntaPiRwqCXrW5ZLxZa8rNoQzDOr49Gv4mvXHJDHSerFPUWDcmyyBK_qe3bkV7UAoR_QSn-tFuLB48e3Bvb-eZrUFNk7M8uanHqCOXK2sR0WyHVkw" />
- </picture>
-</a>

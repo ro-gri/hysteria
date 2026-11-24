@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
 const (
-	updateCheckEndpoint = "https://api.hy2.io/v1/update"
+	updateCheckEndpoint = "https://api.github.com/repos/ro-gri/laz-hysteria/releases/latest"
 	updateCheckTimeout  = 10 * time.Second
 )
 
@@ -70,16 +73,7 @@ type UpdateResponse struct {
 }
 
 func (uc *UpdateChecker) Check() (*UpdateResponse, error) {
-	url := fmt.Sprintf(
-		"%s?cver=%s&plat=%s&arch=%s&chan=%s&side=%s",
-		updateCheckEndpoint,
-		uc.CurrentVersion,
-		uc.Platform,
-		uc.Architecture,
-		uc.Channel,
-		uc.Side,
-	)
-	resp, err := uc.Client.Get(url)
+	resp, err := uc.Client.Get(updateCheckEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -88,10 +82,36 @@ func (uc *UpdateChecker) Check() (*UpdateResponse, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-	var uResp UpdateResponse
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&uResp); err != nil {
+	var release struct {
+		TagName    string `json:"tag_name"`
+		URL        string `json:"html_url"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
+		Assets     []struct {
+			Name string `json:"name"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return nil, err
 	}
-	return &uResp, nil
+	latest := strings.TrimPrefix(release.TagName, "app/")
+	if !semver.IsValid(latest) {
+		return nil, fmt.Errorf("invalid release version: %q", release.TagName)
+	}
+	// Only announce releases that contain a binary for this installation.
+	assetName := fmt.Sprintf("hysteria-%s-%s", uc.Platform, uc.Architecture)
+	available := false
+	for _, asset := range release.Assets {
+		if asset.Name == assetName {
+			available = true
+			break
+		}
+	}
+	current := strings.TrimPrefix(uc.CurrentVersion, "app/")
+	return &UpdateResponse{
+		HasUpdate: available && !release.Draft && !release.Prerelease &&
+			semver.IsValid(current) && semver.Compare(latest, current) > 0,
+		LatestVersion: latest,
+		URL:           release.URL,
+	}, nil
 }

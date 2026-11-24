@@ -20,6 +20,7 @@ func (o *hysteria2Outbound) TCP(addr *AddrEx) (net.Conn, error) {
 	// Preserve the requested host, as SOCKS5 does: the exit resolves domains.
 	return o.client.TCP(addr.String())
 }
+
 func (o *hysteria2Outbound) UDP(addr *AddrEx) (UDPConn, error) {
 	conn, err := o.client.UDP()
 	if err != nil {
@@ -58,6 +59,7 @@ func (c *hysteria2UDPConn) ReadFrom(b []byte) (int, *AddrEx, error) {
 	}
 	return n, addr, nil
 }
+
 func (c *hysteria2UDPConn) WriteTo(b []byte, addr *AddrEx) (int, error) {
 	c.sendMu.Lock()
 	err := c.conn.Send(b, addr.String())
@@ -67,6 +69,7 @@ func (c *hysteria2UDPConn) WriteTo(b []byte, addr *AddrEx) (int, error) {
 	}
 	return len(b), nil
 }
+
 func (c *hysteria2UDPConn) Close() error {
 	c.closeOnce.Do(func() { c.closeErr = c.conn.Close() })
 	return c.closeErr
