@@ -1333,12 +1333,17 @@ func (c *serverConfig) fillOutboundConfig(hyConfig *server.Config, outboundClien
 		return err
 	}
 
+	var resolve func(*outbounds.AddrEx)
+	if resolver, ok := uOb.(outbounds.Resolver); ok {
+		resolve = resolver.Resolve
+	}
+
 	// Speed test
 	if c.SpeedTest {
 		uOb = outbounds.NewSpeedtestHandler(uOb)
 	}
 
-	hyConfig.Outbound = &outbounds.PluggableOutboundAdapter{PluggableOutbound: uOb}
+	hyConfig.Outbound = &outbounds.PluggableOutboundAdapter{PluggableOutbound: uOb, Resolve: resolve}
 	return nil
 }
 

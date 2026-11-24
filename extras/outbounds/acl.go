@@ -23,8 +23,9 @@ var errRejected = errors.New("rejected")
 // If the user-defined outbounds contain any of the above names, they will
 // override the built-in outbounds.
 type aclEngine struct {
-	RuleSet acl.CompiledRuleSet[PluggableOutbound]
-	Default PluggableOutbound
+	RuleSet           acl.CompiledRuleSet[PluggableOutbound]
+	Default           PluggableOutbound
+	maxUDPConnections int
 }
 
 type OutboundEntry struct {
@@ -39,7 +40,24 @@ func NewACLEngine(rules []acl.Rule, outbounds []OutboundEntry, geoLoader acl.Geo
 	if err != nil {
 		return nil, err
 	}
-	return &aclEngine{rs, obMap["default"]}, nil
+	// Each UDP connection can have one reply awaiting consumption. Count the
+	// built-ins too, but do not count aliases (including default) twice.
+	seen := make(map[PluggableOutbound]bool)
+	maxUDPConnections := 0
+	for _, ob := range obMap {
+		if seen[ob] {
+			continue
+		}
+		seen[ob] = true
+		if _, ok := ob.(*aclRejectOutbound); ok {
+			continue
+		}
+		maxUDPConnections++
+		if d, ok := ob.(*directOutbound); ok && (d.BindIP4 != nil || d.BindIP6 != nil) {
+			maxUDPConnections++ // Separate IPv4 and IPv6 connections.
+		}
+	}
+	return &aclEngine{RuleSet: rs, Default: obMap["default"], maxUDPConnections: maxUDPConnections}, nil
 }
 
 func outboundsToMap(outbounds []OutboundEntry) map[string]PluggableOutbound {
@@ -102,8 +120,11 @@ func (a *aclEngine) TCP(reqAddr *AddrEx) (net.Conn, error) {
 }
 
 func (a *aclEngine) UDP(reqAddr *AddrEx) (UDPConn, error) {
-	ob := a.handle(reqAddr, acl.ProtocolUDP)
-	return ob.UDP(reqAddr)
+	target := *reqAddr
+	if err := a.CheckUDP(&target); err != nil {
+		return nil, err
+	}
+	return newUDPConnGroup(a, reqAddr.Info), nil
 }
 
 func (a *aclEngine) CheckUDP(reqAddr *AddrEx) error {

@@ -13,6 +13,9 @@ import (
 	"github.com/apernet/hysteria/core/v2/internal/utils"
 )
 
+// MaxUDPSize is the UDP receive buffer size used by the server.
+const MaxUDPSize = protocol.MaxUDPSize
+
 const (
 	idleCleanupInterval = 1 * time.Second
 	maxSessionACLCache  = 256
